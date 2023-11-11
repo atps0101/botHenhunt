@@ -13,17 +13,11 @@ if($webhook != true){
 
 $webhookInfo = $telegram->getWebhookInfo();
 
-// echo '<pre>';
-// var_dump($webhookInfo);
-// echo '</pre>';
-
-
 if(!isset($_GET['sendMessage']) && !isset($_POST)){
     header("HTTP/1.1 404 Not Found");
     header("Location: /404");
     exit;
 }   
-
 
 
 ?>

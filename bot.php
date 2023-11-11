@@ -10,6 +10,8 @@ if(!isset($_GET['sendMessage']) && !isset($_POST)){
     exit;
 }   
 
+
+
 try {
     $admin = true;
 
@@ -20,7 +22,14 @@ try {
 
         $info = getInfo();
 
-        $telegramMessage = buildTelegramMessage($info);
+        $costs = getCosts();
+
+        $costs_FB = is_numeric($costs['costs_FB']) ? floatval($costs['costs_FB']) : 0;
+        $costs_google = is_numeric($costs['costs_google']) ? floatval($costs['costs_google']) : 0;
+        $total_costs = $costs_FB + $costs_google;
+
+
+        $telegramMessage = buildTelegramMessage($info, $costs, $total_costs);
             
         $bot->sendMessage(groupChatid, $telegramMessage, null, false, null, $keyboard);
     });
@@ -32,7 +41,9 @@ try {
     $e->getMessage();
 }
 
-function buildTelegramMessage($info) {
+
+function buildTelegramMessage($info, $costs,$total_costs) {
+
     $leadsBySource = [];
 
     // Группируем лиды по utm_источнику
@@ -57,60 +68,92 @@ function buildTelegramMessage($info) {
 
     $totalLeads = array_sum(array_column($leadsBySource, 'leads'));
     $totalDeals = array_sum(array_column($leadsBySource, 'deals'));
-    $totalCosts = 0;
-
-    foreach ($leadsBySource as $source => $data) {
-        // Выбираем максимальную затрату из массива
-        $maxCost = max($data['costs']);
-        $totalCosts += $maxCost;
-        $leadsBySource[$source]['costs'] = $maxCost;
-    }
 
     $message = "Общее кол-во Лидов: $totalLeads\n";
     $message .= "Сконвертировано в Сделку: $totalDeals\n";
-    $message .= "Затраты: $totalCosts $\n\n";
+    $message .= "Затраты: $total_costs $\n\n";
 
+    $costs = array(
+        "FB" => $costs['costs_FB'],
+        "google_ads" => $costs['costs_google']
+    );
+    
     foreach ($leadsBySource as $source => $data) {
-        $message .= "$source: {$data['leads']} Лидов из которых {$data['deals']} в Сделку; {$data['costs']} $\n";
+
+        $cost = isset($costs[$source]) ? $costs[$source] : 0;
+
+        $message .= "$source: {$data['leads']} Лидов из которых {$data['deals']} в Сделку; {$cost} $\n";
     }
 
     return $message;
 }
 
 
-function getInfo(){
+    function getInfo(){
+        //Вместо хххххххххххххххххххххххх folderId
+        $api_url = 'https://nethunt.com/api/v1/zapier/triggers/new-record/хххххххххххххххххххххххх?since=' . urlencode(date('Y-m-d\TH:i:s.000\Z', strtotime('yesterday')));
 
-    // Создаем URL с датой вчерашнего дня 
-    $api_url = 'https://nethunt.com/api/v1/zapier/triggers/new-record/64799117e36de95526ea7d0e?since=' . urlencode(date('Y-m-d\TH:i:s.000\Z', strtotime('yesterday')));
+        $credentials = base64_encode(mailNethunt . ':' . nethuntToken);
 
-    $credentials = base64_encode(mailNethunt . ':' . nethuntToken);
+        $ch = curl_init($api_url);
+        $headers = array(
+            'Authorization: Basic ' . $credentials,
+            'Content-Type: application/json', 
+        );
 
-    $ch = curl_init($api_url);
-    $headers = array(
-        'Authorization: Basic ' . $credentials,
-        'Content-Type: application/json', 
-    );
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
 
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        $response = curl_exec($ch);
 
-    $response = curl_exec($ch);
+        curl_close($ch);
 
-    curl_close($ch);
+        $results = json_decode($response, true);
 
-    $results = json_decode($response, true);
+        $currentDate = new DateTime();
 
-    $currentDate = new DateTime();
+        $today = $currentDate->format('Y-m-d\TH:i:s.000\Z');
 
-    $today = $currentDate->format('Y-m-d\TH:i:s.000\Z');
+        $filteredResults = array_filter($results, function ($item) use ($today) {
+            return substr($item['createdAt'], 0, 10) !== substr($today , 0, 10);
+        });
 
-    // Фильтруем записи, оставляем только те, у которых createdAt не совпадает с текущей датой
-    $filteredResults = array_filter($results, function ($item) use ($today) {
-        return substr($item['createdAt'], 0, 10) !== substr($today , 0, 10);
-    });
+        return $filteredResults;
 
-    return $filteredResults;
-}
+    }
+
+
+    function getCosts(){
+
+        //$api_url = 'https://nethunt.com/api/v1/zapier/triggers/writable-folder'; - вывод папок, которые доступны в Nethunt
+
+        //https://nethunt.com/integration-api тут докс, как получить recordId узнаете тут
+
+        $folderId = 'хххххххххххххххххххххххх';
+        $recordId = 'хххххххххххххххххххххххх';
+
+        $api_url = 'https://nethunt.com/api/v1/zapier/searches/find-record/'.$folderId.'?recordId='.$recordId;
+        
+        $credentials = base64_encode(mailNethunt . ':' . nethuntToken);
+    
+        $ch = curl_init($api_url);
+        $headers = array(
+            'Authorization: Basic ' . $credentials,
+            'Content-Type: application/json', 
+        );
+    
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    
+        $response = curl_exec($ch);
+    
+        curl_close($ch);
+    
+        $results = json_decode($response, true);
+    
+        return $results[0]['fields'];
+
+    }
 
     $postData = file_get_contents('php://input');
 
@@ -135,7 +178,13 @@ function getInfo(){
 
         $info = getInfo();
 
-        $telegramMessage = buildTelegramMessage($info);
+        $costs = getCosts();
+
+        $costs_FB = is_numeric($costs['costs_FB']) ? floatval($costs['costs_FB']) : 0;
+        $costs_google = is_numeric($costs['costs_google']) ? floatval($costs['costs_google']) : 0;
+        $total_costs = $costs_FB + $costs_google;
+
+        $telegramMessage = buildTelegramMessage($info, $costs, $total_costs);
 
         $keyboard = new \TelegramBot\Api\Types\ReplyKeyboardMarkup(array(array("/info")), true); 
         $bot->sendMessage(groupChatid, $telegramMessage, null, false, null, $keyboard);
