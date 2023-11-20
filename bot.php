@@ -82,7 +82,11 @@ function buildTelegramMessage($info, $costs,$total_costs) {
 
         $cost = isset($costs[$source]) ? $costs[$source] : 0;
 
-        $message .= "$source: {$data['leads']} Лидов из которых {$data['deals']} в Сделку; {$cost} $\n";
+        $item_cost = ($data['leads'] > 0) ? ($cost / $data['leads']) : 0;
+
+        $item_cost = number_format($item_cost, 2, '.', '');
+
+        $message .= "$source: {$data['leads']} Лидов из которых {$data['deals']} в Сделку; Цена лида {$item_cost}$; Затраты {$cost}$\n";
     }
 
     return $message;
@@ -125,8 +129,6 @@ function buildTelegramMessage($info, $costs,$total_costs) {
 
     function getCosts(){
 
-        //$api_url = 'https://nethunt.com/api/v1/zapier/triggers/writable-folder'; - вывод папок, которые доступны в Nethunt
-
         //https://nethunt.com/integration-api тут докс, как получить recordId узнаете тут
 
         $folderId = 'хххххххххххххххххххххххх';
@@ -150,10 +152,12 @@ function buildTelegramMessage($info, $costs,$total_costs) {
         curl_close($ch);
     
         $results = json_decode($response, true);
-    
+
         return $results[0]['fields'];
 
     }
+
+
 
     $postData = file_get_contents('php://input');
 
